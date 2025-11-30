@@ -10,7 +10,7 @@ import { exists, readDir } from '@tauri-apps/plugin-fs'
 import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { round } from 'es-toolkit'
 import { nth } from 'es-toolkit/compat'
-import { onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { useDevice } from '@/composables/useDevice'
 import { useGamepad } from '@/composables/useGamepad'
@@ -36,6 +36,7 @@ const generalStore = useGeneralStore()
 const resizing = ref(false)
 const backgroundImagePath = ref<string>()
 const { stickActive } = useGamepad()
+const sceneOpacity = ref(catStore.window.opacity / 100)
 
 onMounted(startListening)
 
@@ -119,6 +120,10 @@ watch(() => catStore.window.alwaysOnTop, setAlwaysOnTop, { immediate: true })
 
 watch(() => generalStore.app.taskbarVisible, setTaskbarVisibility, { immediate: true })
 
+watch(() => catStore.window.opacity, (value) => {
+  sceneOpacity.value = value / 100
+})
+
 function handleMouseDown() {
   appWindow.startDragging()
 }
@@ -146,14 +151,24 @@ function handleMouseMove(event: MouseEvent) {
   catStore.window.scale = round(nextScale)
 }
 
-const sceneRef = useTemplateRef('sceneRef')
 let wasInside = false
+let alwaysHide = false
+
+async function hideScene() {
+  sceneOpacity.value = 0
+}
+
+function showScene() {
+  sceneOpacity.value = catStore.window.opacity / 100
+}
 
 useTauriListen<DeviceEvent>(LISTEN_KEY.DEVICE_CHANGED, async ({ payload }) => {
   const { kind, value } = payload
 
   if (kind !== 'MouseMove') return
   const { x, y } = value
+
+  if (alwaysHide) return
 
   const windowPosition = await appWindow.innerPosition()
   const windowSize = await appWindow.innerSize()
@@ -166,22 +181,31 @@ useTauriListen<DeviceEvent>(LISTEN_KEY.DEVICE_CHANGED, async ({ payload }) => {
   const isInside = x > left && x < right && y > top && y < bottom
 
   if (isInside && !wasInside) {
-    catStore.window.hoverTransparent && sceneRef.value?.style.setProperty('opacity', '0')
+    catStore.window.hoverTransparent && hideScene()
     wasInside = true
   } else if (!isInside && wasInside) {
-    catStore.window.hoverTransparent && sceneRef.value?.style.setProperty('opacity', `${catStore.window.opacity / 100}`)
+    catStore.window.hoverTransparent && showScene()
     wasInside = false
   }
+})
+
+useTauriListen<any>('browser-fullscreen', async () => {
+  alwaysHide = true
+  hideScene()
+})
+
+useTauriListen<any>('browser-exit-fullscreen', async () => {
+  alwaysHide = false
+  showScene()
 })
 </script>
 
 <template>
   <div
-    ref="sceneRef"
     class="relative size-screen overflow-hidden transition-opacity children:(absolute size-full)"
     :class="{ '-scale-x-100': catStore.model.mirror }"
     :style="{
-      opacity: catStore.window.opacity / 100,
+      opacity: sceneOpacity,
       borderRadius: `${catStore.window.radius}%`,
     }"
     @contextmenu="handleContextmenu"

@@ -3,13 +3,19 @@ use tauri::{AppHandle, WebviewWindow};
 #[cfg(target_os = "macos")]
 mod macos;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub mod common;
+
+#[cfg(target_os = "windows")]
+mod win;
 
 #[cfg(target_os = "macos")]
 pub use macos::*;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+use win::*;
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub use common::*;
 
 pub fn default(
